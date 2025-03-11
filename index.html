@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parse Tree and AST Visualizer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .input-section {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .visualization-section {
+            display: flex;
+            gap: 20px;
+        }
+
+        .tree-container {
+            flex: 1;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        .tree {
+            font-family: monospace;
+            white-space: pre;
+            margin-top: 10px;
+            padding: 20px;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+
+        pre {
+            margin: 0;
+            font-family: monospace;
+        }
+
+        .node-row {
+            display: flex;
+            justify-content: center;
+            margin: 10px 0;
+        }
+
+        .node-value {
+            padding: 0 10px;
+        }
+
+        .node-children {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .connector {
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="input-section">
+            <h2>Expression Parser</h2>
+            <input type="text" id="expression" placeholder="Enter an expression (e.g., 'max(3+5,7-2)')">
+            <button onclick="parseExpression()">Parse</button>
+            <div id="error" class="error"></div>
+        </div>
+
+        <div class="visualization-section">
+            <div class="tree-container">
+                <h2>Parse Tree</h2>
+                <pre id="parseTree" class="tree"></pre>
+            </div>
+            <div class="tree-container">
+                <h2>Abstract Syntax Tree (AST)</h2>
+                <pre id="ast" class="tree"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function getNodeValue(node) {
+            if (node.type === 'BinaryExpression') return node.operator;
+            if (node.type === 'Literal') return node.value;
+            if (node.type === 'FunctionCall') return node.name;
+            if (node.operator !== undefined) return node.operator;
+            if (node.value !== undefined) return node.value;
+            if (node.name !== undefined) return node.name;
+            return '';
+        }
+
+        function createSpaces(n) {
+            return ' '.repeat(n);
+        }
+
+        function visualizeTreeHorizontal(node, level = 0) {
+            if (!node) return [];
+
+            const nodeValue = getNodeValue(node);
+            const lines = [];
+            const indent = createSpaces(level * 4);
+            
+            // For function calls (like max)
+            if (node.arguments && node.arguments.length) {
+                const argVisuals = node.arguments.map(arg => visualizeTreeHorizontal(arg, level + 1));
+                const maxArgHeight = Math.max(...argVisuals.map(v => v.length));
+                
+                // Center the node value above its children
+                const totalWidth = argVisuals.reduce((sum, arg) => sum + arg[0].length, 0) + 
+                                 (argVisuals.length - 1) * 2;
+                const padding = Math.max(0, Math.floor((totalWidth - nodeValue.length) / 2));
+                
+                lines.push(createSpaces(padding) + nodeValue);
+                
+                // Add connecting lines
+                const connector = createSpaces(padding) + '/' + createSpaces(totalWidth - padding - 2) + '\\';
+                lines.push(connector);
+                
+                // Combine arguments side by side
+                for (let i = 0; i < maxArgHeight; i++) {
+                    let line = '';
+                    argVisuals.forEach((arg, idx) => {
+                        line += (arg[i] || createSpaces(arg[0].length));
+                        if (idx < argVisuals.length - 1) line += '  ';
+                    });
+                    lines.push(line);
+                }
+            }
+            // For binary expressions
+            else if (node.left && node.right) {
+                const leftTree = visualizeTreeHorizontal(node.left, level + 1);
+                const rightTree = visualizeTreeHorizontal(node.right, level + 1);
+                
+                // Center the operator above its operands
+                const totalWidth = leftTree[0].length + rightTree[0].length + 2;
+                const padding = Math.max(0, Math.floor((totalWidth - nodeValue.length) / 2));
+                
+                lines.push(createSpaces(padding) + nodeValue);
+                lines.push(createSpaces(padding) + '/' + createSpaces(totalWidth - padding - 2) + '\\');
+                
+                // Combine left and right trees side by side
+                const maxHeight = Math.max(leftTree.length, rightTree.length);
+                for (let i = 0; i < maxHeight; i++) {
+                    const leftLine = leftTree[i] || createSpaces(leftTree[0].length);
+                    const rightLine = rightTree[i] || createSpaces(rightTree[0].length);
+                    lines.push(leftLine + '  ' + rightLine);
+                }
+            }
+            // For leaf nodes (numbers)
+            else {
+                lines.push(nodeValue);
+            }
+
+            return lines;
+        }
+
+        async function parseExpression() {
+            const expression = document.getElementById('expression').value;
+            const errorDiv = document.getElementById('error');
+            const parseTreeDiv = document.getElementById('parseTree');
+            const astDiv = document.getElementById('ast');
+
+            try {
+                const response = await fetch('http://localhost:3000/parse', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ expression }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to parse expression');
+                }
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    errorDiv.textContent = data.error;
+                    parseTreeDiv.textContent = '';
+                    astDiv.textContent = '';
+                    return;
+                }
+
+                errorDiv.textContent = '';
+                parseTreeDiv.textContent = visualizeTreeHorizontal(data.parseTree).join('\n');
+                astDiv.textContent = visualizeTreeHorizontal(data.ast).join('\n');
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                parseTreeDiv.textContent = '';
+                astDiv.textContent = '';
+            }
+        }
+    </script>
+</body>
+</html> 
